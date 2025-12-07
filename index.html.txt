@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>十二生肖拔毛运动会</title>
+    <style>
+        /* --- 游戏美化样式 --- */
+        body {
+            font-family: "Microsoft YaHei", "Heiti SC", sans-serif;
+            background-color: #dcedc8; /* 草地绿 */
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        h1 { color: #33691e; margin: 10px; font-size: 24px; }
+
+        /* 顶部状态栏 */
+        #status-bar {
+            background: white;
+            padding: 10px 30px;
+            border-radius: 50px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            border: 4px solid #33691e;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        #current-player-indicator {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-block;
+            border: 2px solid rgba(0,0,0,0.2);
+        }
+
+        /* 游戏主盘面 */
+        #game-board {
+            position: relative;
+            width: 600px;
+            height: 600px;
+            background-color: #a1887f; /* 土壤色 */
+            border-radius: 50%;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.5);
+            border: 15px solid #5d4037;
+        }
+
+        /* 中间池塘（放卡牌的地方） */
+        #center-pond {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 360px;
+            height: 360px;
+            background-color: #81c784;
+            border-radius: 50%;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            padding: 40px;
+            gap: 10px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
+        }
+
+        /* 外圈跑道格子 */
+        .tile {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            border: 3px solid #fff;
+            z-index: 1;
+        }
+
+        /* 玩家棋子 */
+        .pawn {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            z-index: 100; /* 保证在最上层 */
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+            border: 4px solid white;
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* 弹跳动画 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* 记忆卡牌 */
+        .card {
+            background-color: #5d4037; /* 卡背颜色 */
+            border-radius: 8px;
+            cursor: pointer;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.4s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+
+        .card.flipped {
+            transform: rotateY(180deg);
+            background-color: #fff;
+            cursor: default;
+        }
+
+        /* 卡牌内容 */
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+        }
+
+        .card-back {
+            background: repeating-linear-gradient(
+                45deg,
+                #5d4037,
+                #5d4037 10px,
+                #4e342e 10px,
+                #4e342e 20px
+            );
+        }
+
+        .card-front {
+            background-color: white;
+            transform: rotateY(180deg);
+            color: #333;
+            border: 2px solid #5d4037;
+        }
+
+        .hanzi { font-size: 28px; font-weight: bold; line-height: 1.2; }
+        .pinyin { font-size: 14px; color: #e65100; font-weight: bold; }
+
+        /* 提示框 */
+        #message-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 10px;
+            font-size: 30px;
+            display: none;
+            z-index: 999;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="status-bar">
+        <div>当前回合:</div>
+        <div id="current-player-indicator"></div>
+        <div id="player-text">玩家</div>
+    </div>
+
+    <div id="game-board">
+        <div id="center-pond">
+            </div>
+    </div>
+
+    <div id="message-overlay">太棒了！继续！</div>
+
+    <script>
+        // --- 1. 游戏数据配置 ---
+        
+        // 十二生肖数据 (图案 + 汉字 + 拼音)
+        const zodiacs = [
+            { id: 1,  icon: '🐭', hanzi: '鼠', pinyin: 'shǔ' },
+            { id: 2,  icon: '🐮', hanzi: '牛', pinyin: 'niú' },
+            { id: 3,  icon: '🐯', hanzi: '虎', pinyin: 'hǔ' },
+            { id: 4,  icon: '🐰', hanzi: '兔', pinyin: 'tù' },
+            { id: 5,  icon: '🐲', hanzi: '龙', pinyin: 'lóng' },
+            { id: 6,  icon: '🐍', hanzi: '蛇', pinyin: 'shé' },
+            { id: 7,  icon: '🐴', hanzi: '马', pinyin: 'mǎ' },
+            { id: 8,  icon: '🐑', hanzi: '羊', pinyin: 'yáng' },
+            { id: 9,  icon: '🐵', hanzi: '猴', pinyin: 'hóu' },
+            { id: 10, icon: '🐔', hanzi: '鸡', pinyin: 'jī' },
+            { id: 11, icon: '🐶', hanzi: '狗', pinyin: 'gǒu' },
+            { id: 12, icon: '🐷', hanzi: '猪', pinyin: 'zhū' }
+        ];
+
+        // 跑道：12生肖循环2次 = 24格
+        const trackList = [...zodiacs, ...zodiacs]; 
+        
+        // 4名学生玩家
+        const players = [
+            { id: 0, name: "小红", color: "#f44336", pos: 0 },  // 红色
+            { id: 1, name: "小蓝", color: "#2196f3", pos: 6 },  // 蓝色
+            { id: 2, name: "小黄", color: "#ffeb3b", pos: 12 }, // 黄色
+            { id: 3, name: "小绿", color: "#4caf50", pos: 18 }  // 绿色
+        ];
+
+        let turnIndex = 0; // 当前轮到谁
+        let isLocked = false; // 防止狂点
+
+        // --- 2. 界面初始化引擎 ---
+
+        const board = document.getElementById('game-board');
+        const pond = document.getElementById('center-pond');
+        const msgOverlay = document.getElementById('message-overlay');
+
+        // 计算圆周位置的辅助函数
+        function getPosition(index, total, radius) {
+            const angle = (index / total) * 2 * Math.PI - (Math.PI / 2); // -90度让第一个在正上方
+            const x = 300 + radius * Math.cos(angle);
+            const y = 300 + radius * Math.sin(angle);
+            return { x, y };
+        }
+
+        // A. 生成跑道 (半径265)
+        trackList.forEach((item, idx) => {
+            const tile = document.createElement('div');
+            tile.className = 'tile';
+            tile.innerText = item.icon;
+            const pos = getPosition(idx, 24, 265);
+            tile.style.left = (pos.x - 25) + 'px'; // -25是半径修正
+            tile.style.top = (pos.y - 25) + 'px';
+            board.appendChild(tile);
+        });
+
+        // B. 生成玩家
+        players.forEach(p => {
+            const pawn = document.createElement('div');
+            pawn.className = 'pawn';
+            pawn.id = `p-${p.id}`;
+            pawn.style.backgroundColor = p.color;
+            pawn.innerText = (p.id + 1); // 显示数字编号
+            if(p.id === 2) pawn.style.color = 'black'; // 黄色棋子配黑字清楚点
+            board.appendChild(pawn);
+            renderPlayerPos(p);
+        });
+
+        function renderPlayerPos(p) {
+            const idx = p.pos % 24;
+            // 棋子稍微靠内圈一点点(半径265 -> 220)，避免遮挡图案
+            const pos = getPosition(idx, 24, 265); 
+            const el = document.getElementById(`p-${p.id}`);
+            el.style.left = (pos.x - 20) + 'px';
+            el.style.top = (pos.y - 20) + 'px';
+        }
+
+        // C. 生成中间卡牌 (洗牌)
+        let deck = [...zodiacs];
+        deck.sort(() => Math.random() - 0.5); // 随机打乱
+
+        deck.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+                <div class="card-back"></div>
+                <div class="card-front">
+                    <div class="hanzi">${item.hanzi}</div>
+                    <div class="pinyin">${item.pinyin}</div>
+                </div>
+            `;
+            card.onclick = () => onCardClick(card, item);
+            pond.appendChild(card);
+        });
+
+        updateStatusBar();
+
+        // --- 3. 核心游戏逻辑 ---
+
+        function onCardClick(cardEl, cardData) {
+            if (isLocked) return;
+            if (cardEl.classList.contains('flipped')) return;
+
+            isLocked = true;
+            cardEl.classList.add('flipped'); // 翻开动作
+
+            const currPlayer = players[turnIndex];
+            
+            // 目标：当前玩家脚下那一格的“下一格”是什么动物？
+            const nextStepIndex = (currPlayer.pos + 1) % 24;
+            const targetZodiacId = trackList[nextStepIndex].id;
+
+            // 延时判断，给学生阅读时间
+            setTimeout(() => {
+                if (cardData.id === targetZodiacId) {
+                    // >> 匹配成功！ <<
+                    showMsg("匹配成功！🏃‍♂️");
+                    
+                    // 移动玩家
+                    currPlayer.pos += 1;
+                    renderPlayerPos(currPlayer);
+                    
+                    // 拔毛规则简化：如果这一格有人，就跳过去（简单的超车逻辑）
+                    checkOvertake(currPlayer);
+
+                    // 盖回牌（这是记忆游戏，位置不变）
+                    setTimeout(() => {
+                        cardEl.classList.remove('flipped');
+                        isLocked = false;
+                        // 奖励：不用切换玩家，继续玩！
+                        updateStatusBar();
+                    }, 1000);
+
+                } else {
+                    // >> 匹配失败 <<
+                    showMsg("可惜，没对上...");
+                    
+                    setTimeout(() => {
+                        cardEl.classList.remove('flipped');
+                        // 切换下一个
+                        turnIndex = (turnIndex + 1) % 4;
+                        updateStatusBar();
+                        isLocked = false;
+                    }, 1500);
+                }
+            }, 1000); // 翻开看1秒
+        }
+
+        function checkOvertake(mover) {
+            // 简单的防重叠逻辑：如果移动后的位置有别人，再往前走一步
+            // 真实拔毛规则比较复杂，这里为了网页简单体验，改为“跳马”
+            let isOccupied = true;
+            while(isOccupied) {
+                isOccupied = false;
+                const myIdx = mover.pos % 24;
+                players.forEach(other => {
+                    if (other.id !== mover.id) {
+                        const otherIdx = other.pos % 24;
+                        if (myIdx === otherIdx) {
+                            // 撞车了，跳过去
+                            mover.pos += 1;
+                            renderPlayerPos(mover);
+                            isOccupied = true; // 重新检查新位置
+                            showMsg("跳过对手！⚡");
+                        }
+                    }
+                });
+            }
+        }
+
+        function showMsg(text) {
+            msgOverlay.innerText = text;
+            msgOverlay.style.display = 'block';
+            setTimeout(() => {
+                msgOverlay.style.display = 'none';
+            }, 1000);
+        }
+
+        function updateStatusBar() {
+            const p = players[turnIndex];
+            const indicator = document.getElementById('current-player-indicator');
+            const txt = document.getElementById('player-text');
+            
+            indicator.style.backgroundColor = p.color;
+            txt.innerText = `${p.name} 的回合 (找: ${getNextAnimalName(p)})`;
+            txt.style.color = p.color === '#ffeb3b' ? '#fbc02d' : p.color; // 黄色文字加深一点便于阅读
+        }
+
+        function getNextAnimalName(player) {
+            const nextIdx = (player.pos + 1) % 24;
+            return trackList[nextIdx].icon;
+        }
+
+    </script>
+</body>
+</html>
